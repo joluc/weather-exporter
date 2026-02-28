@@ -1,0 +1,23 @@
+Thank you for installing {{ .Chart.Name }}.
+
+To access metrics:
+
+  kubectl port-forward svc/{{ include "weather-exporter.fullname" . }} 9798:9798
+
+Then visit http://localhost:9798/metrics
+
+Configured cities:
+{{- range .Values.config.cities }}
+  - {{ . }}
+{{- end }}
+
+Enabled providers:
+{{- if .Values.config.providers.yr.enabled }}
+  - yr
+{{- end }}
+{{- if .Values.config.providers.dwd.enabled }}
+  - dwd
+{{- end }}
+{{- if .Values.config.providers.openweathermap.enabled }}
+  - openweathermap
+{{- end }}

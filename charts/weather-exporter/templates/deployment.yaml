@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "weather-exporter.fullname" . }}
+  labels:
+    {{- include "weather-exporter.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "weather-exporter.labels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9798"
+        prometheus.io/path: "/metrics"
+      labels:
+        {{- include "weather-exporter.labels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+      containers:
+      - name: weather-exporter
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        args:
+          - --listen-address={{ .Values.config.listenAddress }}
+          {{- if .Values.config.jsonLogs }}
+          - --json-logs
+          {{- end }}
+          {{- if .Values.config.providers.dwd.enabled }}
+          - --dwd-enabled
+          {{- end }}
+          {{- if .Values.config.providers.yr.userAgent }}
+          - --yr-user-agent={{ .Values.config.providers.yr.userAgent }}
+          {{- end }}
+          {{- if .Values.config.providers.openweathermap.enabled }}
+          - --openweathermap-api-key=$(OPENWEATHER_API_KEY)
+          {{- end }}
+          {{- range .Values.config.cities }}
+          - --city={{ . }}
+          {{- end }}
+        {{- if .Values.config.providers.openweathermap.enabled }}
+        env:
+          - name: OPENWEATHER_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.existingSecret | default (include "weather-exporter.fullname" .) }}
+                key: openweathermap-api-key
+        {{- end }}
+        ports:
+          - name: http
+            containerPort: 9798
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.resources | nindent 12 }}

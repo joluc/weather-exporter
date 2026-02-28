@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/joluc/weather-exporter/internal/config"
 	"github.com/joluc/weather-exporter/internal/provider"
@@ -23,13 +24,21 @@ type WeatherCollector struct {
 	providers []provider.Provider
 	cities    []config.City
 	logger    *slog.Logger
+
+	// Cache
+	mu          sync.Mutex
+	cacheTTL    time.Duration
+	lastScrape  time.Time
+	cachedData  []MetricSample
 }
 
-func NewWeatherCollector(providers []provider.Provider, cities []config.City, logger *slog.Logger) *WeatherCollector {
+func NewWeatherCollector(providers []provider.Provider, cities []config.City, logger *slog.Logger, cacheTTL time.Duration) *WeatherCollector {
 	return &WeatherCollector{
-		providers: providers,
-		cities:    cities,
-		logger:    logger,
+		providers:  providers,
+		cities:     cities,
+		logger:     logger,
+		cacheTTL:   cacheTTL,
+		cachedData: []MetricSample{},
 	}
 }
 
@@ -56,6 +65,29 @@ func (c *WeatherCollector) filterProvidersForCity(city config.City) []provider.P
 }
 
 func (c *WeatherCollector) Collect(ctx context.Context) []MetricSample {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Check if cache is still valid
+	if time.Since(c.lastScrape) < c.cacheTTL && len(c.cachedData) > 0 {
+		c.logger.Debug("serving from cache",
+			slog.Duration("age", time.Since(c.lastScrape)),
+			slog.Duration("ttl", c.cacheTTL))
+
+		// Add cache age metric
+		cacheAge := time.Since(c.lastScrape).Seconds()
+		result := append([]MetricSample{}, c.cachedData...)
+		result = append(result, MetricSample{
+			Name:   "weather_cache_age_seconds",
+			Labels: map[string]string{},
+			Value:  cacheAge,
+		})
+		return result
+	}
+
+	// Cache miss or expired - fetch new data
+	c.logger.Debug("cache miss, fetching fresh data")
+
 	type result struct {
 		ProviderName string
 		CityName     string
@@ -108,7 +140,19 @@ func (c *WeatherCollector) Collect(ctx context.Context) []MetricSample {
 		emitIfSet(&samples, "weather_visibility_meters", r.Data.VisibilityMeters, r.ProviderName, r.CityName)
 	}
 
-	return samples
+	// Update cache
+	c.cachedData = samples
+	c.lastScrape = time.Now()
+
+	// Add cache age metric (0 for fresh data)
+	output := append([]MetricSample{}, samples...)
+	output = append(output, MetricSample{
+		Name:   "weather_cache_age_seconds",
+		Labels: map[string]string{},
+		Value:  0,
+	})
+
+	return output
 }
 
 func emitIfSet(samples *[]MetricSample, metricName string, value *float64, providerName, cityName string) {
@@ -139,6 +183,7 @@ var metricHelp = map[string]string{
 	"weather_cloud_cover_percent":    "Cloud cover percentage.",
 	"weather_visibility_meters":      "Horizontal visibility in meters.",
 	"weather_provider_up":            "Whether a provider/city fetch was successful.",
+	"weather_cache_age_seconds":      "Age of cached data in seconds.",
 }
 
 var metricOrder = []string{
@@ -151,6 +196,7 @@ var metricOrder = []string{
 	"weather_cloud_cover_percent",
 	"weather_visibility_meters",
 	"weather_provider_up",
+	"weather_cache_age_seconds",
 }
 
 func RenderPrometheus(samples []MetricSample) string {

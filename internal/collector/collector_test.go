@@ -50,6 +50,7 @@ func TestCollectorEmitsUpAndDataMetrics(t *testing.T) {
 		[]provider.Provider{successProvider, failedProvider},
 		[]config.City{{Name: "Leipzig", Lat: 51.33, Lon: 12.37}},
 		slog.Default(),
+		0, // No caching for tests
 	)
 
 	samples := c.Collect(context.Background())
@@ -116,6 +117,7 @@ func TestCollectorRespectsPerCityProviderFilter(t *testing.T) {
 		[]provider.Provider{provider1, provider2},
 		cities,
 		slog.Default(),
+		0, // No caching for tests
 	)
 
 	samples := c.Collect(context.Background())
@@ -151,6 +153,7 @@ func TestCollectorBackwardCompatibilityNoFilter(t *testing.T) {
 		[]provider.Provider{provider1, provider2},
 		cities,
 		slog.Default(),
+		0, // No caching for tests
 	)
 
 	samples := c.Collect(context.Background())

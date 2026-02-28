@@ -30,6 +30,7 @@ config:
       enabled: false
       apiKey: ""
 
+  cacheTTL: "5m"
   jsonLogs: false
   listenAddress: ":9798"
 

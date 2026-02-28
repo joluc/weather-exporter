@@ -21,6 +21,7 @@ import (
 func main() {
 	var cities config.CityFlags
 	listenAddress := flag.String("listen-address", ":9798", "HTTP listen address.")
+	cacheTTL := flag.Duration("cache-ttl", 5*time.Minute, "Cache TTL for weather data.")
 	dwdEnabled := flag.Bool("dwd-enabled", false, "Enable DWD provider via Open-Meteo.")
 	openWeatherAPIKey := flag.String("openweathermap-api-key", "", "OpenWeatherMap API key. If not set, checks OPENWEATHER_API_KEY env var.")
 	yrUserAgent := flag.String("yr-user-agent", "", "User agent for YR provider. If not set, checks USER_AGENT env var.")
@@ -53,9 +54,10 @@ func main() {
 	}
 	logger.Info("starting weather-exporter",
 		slog.String("providers", strings.Join(providerNames, ", ")),
-		slog.Int("cities", len(cities)))
+		slog.Int("cities", len(cities)),
+		slog.Duration("cache_ttl", *cacheTTL))
 
-	weatherCollector := collector.NewWeatherCollector(providers, cities, logger)
+	weatherCollector := collector.NewWeatherCollector(providers, cities, logger, *cacheTTL)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {

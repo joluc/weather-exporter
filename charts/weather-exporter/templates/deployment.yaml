@@ -34,6 +34,7 @@ spec:
           readOnlyRootFilesystem: true
         args:
           - --listen-address={{ .Values.config.listenAddress }}
+          - --cache-ttl={{ .Values.config.cacheTTL }}
           {{- if .Values.config.jsonLogs }}
           - --json-logs
           {{- end }}

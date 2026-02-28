@@ -7,6 +7,7 @@ Prometheus exporter for weather data with dynamic provider activation.
 - Multi-provider collection with a unified metric schema.
 - Dynamic provider activation based on flags and credentials.
 - Per-city provider selection to optimize API usage.
+- Built-in caching (default 5m) to reduce provider API calls while allowing frequent Prometheus scrapes.
 - Repeatable `--city` flag for multiple target locations.
 - Concurrent fetches across providers and cities.
 - Endpoints:
@@ -32,6 +33,7 @@ All metrics are gauges with labels `provider` and `city`.
 - `weather_cloud_cover_percent`
 - `weather_visibility_meters`
 - `weather_provider_up` (1 when fetch succeeds, 0 on failure)
+- `weather_cache_age_seconds` (age of cached data, 0 for fresh data)
 
 ## Run locally
 

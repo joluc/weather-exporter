@@ -45,3 +45,4 @@ charts/**/charts/
 tmp/
 *.tmp
 *.log
+.claude/

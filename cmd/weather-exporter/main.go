@@ -23,6 +23,7 @@ func main() {
 	listenAddress := flag.String("listen-address", ":9798", "HTTP listen address.")
 	cacheTTL := flag.Duration("cache-ttl", 5*time.Minute, "Cache TTL for weather data.")
 	dwdEnabled := flag.Bool("dwd-enabled", false, "Enable DWD provider via Open-Meteo.")
+	dwdPollenEnabled := flag.Bool("dwd-pollen-enabled", false, "Enable DWD pollen provider.")
 	openWeatherAPIKey := flag.String("openweathermap-api-key", "", "OpenWeatherMap API key. If not set, checks OPENWEATHER_API_KEY env var.")
 	yrUserAgent := flag.String("yr-user-agent", "", "User agent for YR provider. If not set, checks USER_AGENT env var.")
 	jsonLogs := flag.Bool("json-logs", false, "Use JSON log format instead of text.")
@@ -37,7 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	providers := enabledProviders(logger, *dwdEnabled, *openWeatherAPIKey, *yrUserAgent)
+	providers := enabledProviders(logger, *dwdEnabled, *dwdPollenEnabled, *openWeatherAPIKey, *yrUserAgent)
 	if len(providers) == 0 {
 		logger.Error("no providers enabled")
 		os.Exit(1)
@@ -147,8 +148,8 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
-func enabledProviders(logger *slog.Logger, dwdEnabled bool, openWeatherAPIKey, yrUserAgent string) []provider.Provider {
-	enabled := make([]provider.Provider, 0, 3)
+func enabledProviders(logger *slog.Logger, dwdEnabled, dwdPollenEnabled bool, openWeatherAPIKey, yrUserAgent string) []provider.Provider {
+	enabled := make([]provider.Provider, 0, 4)
 
 	// YR provider: use flag if provided, otherwise fall back to USER_AGENT env var
 	userAgent := yrUserAgent
@@ -172,6 +173,17 @@ func enabledProviders(logger *slog.Logger, dwdEnabled bool, openWeatherAPIKey, y
 				slog.Any("error", err))
 		} else {
 			enabled = append(enabled, dwd)
+		}
+	}
+
+	if dwdPollenEnabled {
+		dwdPollen := provider.NewDWDPollenProvider()
+		if err := dwdPollen.Init(""); err != nil {
+			logger.Warn("provider disabled",
+				slog.String("provider", dwdPollen.Name()),
+				slog.Any("error", err))
+		} else {
+			enabled = append(enabled, dwdPollen)
 		}
 	}
 

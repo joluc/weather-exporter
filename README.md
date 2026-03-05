@@ -18,11 +18,14 @@ Prometheus exporter for weather data with dynamic provider activation.
 
 - `yr` (MET Norway): enabled by default, optionally uses `--yr-user-agent` flag or `USER_AGENT` env var.
 - `dwd` (Open-Meteo backend): enabled with `--dwd-enabled` flag.
+- `dwd-pollen` (DWD Pollen Forecast): enabled with `--dwd-pollen-enabled` flag. Provides pollen risk indices for 8 allergen types across 26 German regions. Automatically maps lat/lon coordinates to DWD regions.
 - `openweathermap`: enabled with `--openweathermap-api-key` flag or `OPENWEATHER_API_KEY` env var.
 
 ## Metrics
 
-All metrics are gauges with labels `provider` and `city`.
+### Weather Metrics
+
+All weather metrics are gauges with labels `provider` and `city`.
 
 - `weather_temperature_celsius`
 - `weather_humidity_relative`
@@ -34,6 +37,13 @@ All metrics are gauges with labels `provider` and `city`.
 - `weather_visibility_meters`
 - `weather_provider_up` (1 when fetch succeeds, 0 on failure)
 - `weather_cache_age_seconds` (age of cached data, 0 for fresh data)
+
+### Pollen Metrics
+
+Pollen metrics have labels `provider`, `city`, `region`, and `pollen_type`.
+
+- `pollen_risk_index`: Pollen risk index (0=none, 0.5=low-medium, 1=low, 1.5=low-medium, 2=medium, 2.5=medium-high, 3=high, -1=no data)
+  - Pollen types: `hazel`, `alder`, `ash`, `birch`, `grasses`, `rye`, `mugwort`, `ambrosia`
 
 ## Run locally
 
@@ -82,6 +92,7 @@ Enable all providers:
 ```bash
 go run ./cmd/weather-exporter \
   --dwd-enabled \
+  --dwd-pollen-enabled \
   --openweathermap-api-key="your-key" \
   --yr-user-agent="weather-exporter/1.0" \
   --city="Leipzig:51.33,12.37"
@@ -92,9 +103,20 @@ Mix and match providers per city:
 ```bash
 go run ./cmd/weather-exporter \
   --dwd-enabled \
+  --dwd-pollen-enabled \
   --openweathermap-api-key="your-key" \
-  --city="Leipzig:51.33,12.37@yr,dwd" \
-  --city="Berlin:52.52,13.40@openweathermap"
+  --city="Leipzig:51.33,12.37@yr,dwd,dwd-pollen" \
+  --city="Berlin:52.52,13.40@openweathermap,dwd-pollen"
+```
+
+Enable pollen data only for German cities:
+
+```bash
+go run ./cmd/weather-exporter \
+  --dwd-pollen-enabled \
+  --city="Leipzig:51.33,12.37@dwd-pollen" \
+  --city="Berlin:52.52,13.40@dwd-pollen" \
+  --city="Munich:48.13,11.57@dwd-pollen"
 ```
 
 ## Test

@@ -13,7 +13,7 @@ func TestEnabledProvidersWithoutOpenWeatherKey(t *testing.T) {
 	t.Setenv("USER_AGENT", "weather-exporter-test")
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	providers := enabledProviders(logger, false, "", "")
+	providers := enabledProviders(logger, false, false, "", "")
 	if hasProvider(providers, "openweathermap") {
 		t.Fatal("did not expect openweathermap provider without api key")
 	}
@@ -27,7 +27,7 @@ func TestEnabledProvidersWithOpenWeatherKey(t *testing.T) {
 	t.Setenv("USER_AGENT", "weather-exporter-test")
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	providers := enabledProviders(logger, false, "", "")
+	providers := enabledProviders(logger, false, false, "", "")
 	if !hasProvider(providers, "openweathermap") {
 		t.Fatal("expected openweathermap provider with api key")
 	}
@@ -38,7 +38,7 @@ func TestEnabledProvidersWithDWDFlag(t *testing.T) {
 	t.Setenv("USER_AGENT", "weather-exporter-test")
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	providers := enabledProviders(logger, true, "", "")
+	providers := enabledProviders(logger, true, false, "", "")
 	if !hasProvider(providers, "dwd") {
 		t.Fatal("expected dwd provider when dwd-enabled is true")
 	}
@@ -56,7 +56,7 @@ func hasProvider[T interface{ Name() string }](providers []T, name string) bool 
 func TestValidateCityProvidersWithAllValid(t *testing.T) {
 	t.Setenv("USER_AGENT", "weather-exporter-test")
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	providers := enabledProviders(logger, false, "", "")
+	providers := enabledProviders(logger, false, false, "", "")
 
 	cities := []config.City{
 		{Name: "Leipzig", Lat: 51.33, Lon: 12.37, Providers: []string{"yr"}},
@@ -70,7 +70,7 @@ func TestValidateCityProvidersWithAllValid(t *testing.T) {
 func TestValidateCityProvidersWithUnavailable(t *testing.T) {
 	t.Setenv("USER_AGENT", "weather-exporter-test")
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	providers := enabledProviders(logger, false, "", "") // dwd not enabled
+	providers := enabledProviders(logger, false, false, "", "") // dwd not enabled
 
 	cities := []config.City{
 		{Name: "Leipzig", Lat: 51.33, Lon: 12.37, Providers: []string{"dwd"}},
@@ -84,7 +84,7 @@ func TestValidateCityProvidersWithUnavailable(t *testing.T) {
 func TestValidateCityProvidersWithNoProviders(t *testing.T) {
 	t.Setenv("USER_AGENT", "weather-exporter-test")
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	providers := enabledProviders(logger, false, "", "")
+	providers := enabledProviders(logger, false, false, "", "")
 
 	cities := []config.City{
 		{Name: "Leipzig", Lat: 51.33, Lon: 12.37, Providers: nil}, // No provider filter
@@ -97,7 +97,7 @@ func TestValidateCityProvidersWithNoProviders(t *testing.T) {
 
 func TestEnabledProvidersWithFlagValues(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	providers := enabledProviders(logger, true, "flag-api-key", "flag-user-agent")
+	providers := enabledProviders(logger, true, false, "flag-api-key", "flag-user-agent")
 
 	if !hasProvider(providers, "yr") {
 		t.Fatal("expected yr provider with flag user agent")
@@ -115,7 +115,7 @@ func TestEnabledProvidersEnvVarFallback(t *testing.T) {
 	t.Setenv("USER_AGENT", "env-agent")
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	providers := enabledProviders(logger, false, "", "") // Empty flags, should use env vars
+	providers := enabledProviders(logger, false, false, "", "") // Empty flags, should use env vars
 
 	if !hasProvider(providers, "yr") {
 		t.Fatal("expected yr provider with env USER_AGENT")
@@ -130,7 +130,7 @@ func TestEnabledProvidersFlagsOverrideEnv(t *testing.T) {
 	t.Setenv("USER_AGENT", "env-agent")
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	providers := enabledProviders(logger, false, "flag-key", "flag-agent") // Flags should override env
+	providers := enabledProviders(logger, false, false, "flag-key", "flag-agent") // Flags should override env
 
 	// Both should be enabled (the test validates that flags take precedence)
 	if !hasProvider(providers, "yr") {

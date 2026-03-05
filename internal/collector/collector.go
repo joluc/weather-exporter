@@ -88,38 +88,65 @@ func (c *WeatherCollector) Collect(ctx context.Context) []MetricSample {
 	// Cache miss or expired - fetch new data
 	c.logger.Debug("cache miss, fetching fresh data")
 
-	type result struct {
+	type weatherResult struct {
 		ProviderName string
 		CityName     string
 		Data         provider.WeatherData
 		Err          error
 	}
 
+	type pollenResult struct {
+		ProviderName string
+		CityName     string
+		Data         provider.PollenData
+		Err          error
+	}
+
 	var wg sync.WaitGroup
-	resultCh := make(chan result, len(c.providers)*len(c.cities))
+	weatherResultCh := make(chan weatherResult, len(c.providers)*len(c.cities))
+	pollenResultCh := make(chan pollenResult, len(c.providers)*len(c.cities))
 	samples := make([]MetricSample, 0, len(c.providers)*len(c.cities)*5)
 
 	for _, city := range c.cities {
 		filteredProviders := c.filterProvidersForCity(city)
 		for _, p := range filteredProviders {
-			wg.Add(1)
-			go func(p provider.Provider, city config.City) {
-				defer wg.Done()
-				data, err := p.Fetch(ctx, city.Lat, city.Lon)
-				resultCh <- result{
-					ProviderName: p.Name(),
-					CityName:     city.Name,
-					Data:         data,
-					Err:          err,
-				}
-			}(p, city)
+			// Check if this is a pollen provider
+			if pollenProvider, ok := p.(provider.PollenProvider); ok {
+				wg.Add(1)
+				go func(p provider.PollenProvider, city config.City) {
+					defer wg.Done()
+					data, err := p.FetchPollen(ctx, city.Lat, city.Lon)
+					pollenResultCh <- pollenResult{
+						ProviderName: p.Name(),
+						CityName:     city.Name,
+						Data:         data,
+						Err:          err,
+					}
+				}(pollenProvider, city)
+			} else {
+				wg.Add(1)
+				go func(p provider.Provider, city config.City) {
+					defer wg.Done()
+					data, err := p.Fetch(ctx, city.Lat, city.Lon)
+					weatherResultCh <- weatherResult{
+						ProviderName: p.Name(),
+						CityName:     city.Name,
+						Data:         data,
+						Err:          err,
+					}
+				}(p, city)
+			}
 		}
 	}
 
-	wg.Wait()
-	close(resultCh)
+	go func() {
+		wg.Wait()
+		close(weatherResultCh)
+		close(pollenResultCh)
+	}()
 
-	for r := range resultCh {
+	// Process weather results
+	for r := range weatherResultCh {
 		if r.Err != nil {
 			c.logger.Error("provider fetch failed",
 				slog.String("provider", r.ProviderName),
@@ -138,6 +165,35 @@ func (c *WeatherCollector) Collect(ctx context.Context) []MetricSample {
 		emitIfSet(&samples, "weather_precipitation_mm", r.Data.PrecipitationMM, r.ProviderName, r.CityName)
 		emitIfSet(&samples, "weather_cloud_cover_percent", r.Data.CloudCoverPercent, r.ProviderName, r.CityName)
 		emitIfSet(&samples, "weather_visibility_meters", r.Data.VisibilityMeters, r.ProviderName, r.CityName)
+	}
+
+	// Process pollen results
+	for r := range pollenResultCh {
+		if r.Err != nil {
+			c.logger.Error("pollen provider fetch failed",
+				slog.String("provider", r.ProviderName),
+				slog.String("city", r.CityName),
+				slog.Any("error", r.Err))
+			samples = append(samples, sample("weather_provider_up", 0, r.ProviderName, r.CityName))
+			continue
+		}
+		samples = append(samples, sample("weather_provider_up", 1, r.ProviderName, r.CityName))
+
+		// Emit pollen metrics
+		for pollenType, value := range r.Data.Values {
+			if value >= 0 { // Skip -1 (no data) values
+				samples = append(samples, MetricSample{
+					Name: "pollen_risk_index",
+					Labels: map[string]string{
+						"provider":    r.ProviderName,
+						"city":        r.CityName,
+						"region":      r.Data.Region,
+						"pollen_type": pollenType,
+					},
+					Value: value,
+				})
+			}
+		}
 	}
 
 	// Update cache
@@ -184,6 +240,7 @@ var metricHelp = map[string]string{
 	"weather_visibility_meters":      "Horizontal visibility in meters.",
 	"weather_provider_up":            "Whether a provider/city fetch was successful.",
 	"weather_cache_age_seconds":      "Age of cached data in seconds.",
+	"pollen_risk_index":              "Pollen risk index (0=none, 1=low, 2=medium, 3=high, -1=no data).",
 }
 
 var metricOrder = []string{
@@ -195,6 +252,7 @@ var metricOrder = []string{
 	"weather_precipitation_mm",
 	"weather_cloud_cover_percent",
 	"weather_visibility_meters",
+	"pollen_risk_index",
 	"weather_provider_up",
 	"weather_cache_age_seconds",
 }
@@ -212,23 +270,65 @@ func RenderPrometheus(samples []MetricSample) string {
 			continue
 		}
 
+		// Build sort key based on all labels
 		sort.Slice(items, func(i, j int) bool {
+			// Sort by provider, then city, then all other labels
 			left := items[i].Labels["provider"] + "\x00" + items[i].Labels["city"]
 			right := items[j].Labels["provider"] + "\x00" + items[j].Labels["city"]
+			if left != right {
+				return left < right
+			}
+			// For pollen metrics, also sort by region and pollen_type
+			if region, ok := items[i].Labels["region"]; ok {
+				left += "\x00" + region
+			}
+			if region, ok := items[j].Labels["region"]; ok {
+				right += "\x00" + region
+			}
+			if pollenType, ok := items[i].Labels["pollen_type"]; ok {
+				left += "\x00" + pollenType
+			}
+			if pollenType, ok := items[j].Labels["pollen_type"]; ok {
+				right += "\x00" + pollenType
+			}
 			return left < right
 		})
 
 		fmt.Fprintf(&b, "# HELP %s %s\n", metricName, metricHelp[metricName])
 		fmt.Fprintf(&b, "# TYPE %s gauge\n", metricName)
 		for _, item := range items {
-			fmt.Fprintf(
-				&b,
-				"%s{provider=\"%s\",city=\"%s\"} %s\n",
-				metricName,
-				escapeLabel(item.Labels["provider"]),
-				escapeLabel(item.Labels["city"]),
-				strconv.FormatFloat(item.Value, 'f', -1, 64),
-			)
+			// Build label string dynamically based on available labels
+			var labelPairs []string
+
+			// Always include provider and city if they exist
+			if provider, ok := item.Labels["provider"]; ok {
+				labelPairs = append(labelPairs, fmt.Sprintf("provider=\"%s\"", escapeLabel(provider)))
+			}
+			if city, ok := item.Labels["city"]; ok {
+				labelPairs = append(labelPairs, fmt.Sprintf("city=\"%s\"", escapeLabel(city)))
+			}
+
+			// Add pollen-specific labels if present
+			if region, ok := item.Labels["region"]; ok {
+				labelPairs = append(labelPairs, fmt.Sprintf("region=\"%s\"", escapeLabel(region)))
+			}
+			if pollenType, ok := item.Labels["pollen_type"]; ok {
+				labelPairs = append(labelPairs, fmt.Sprintf("pollen_type=\"%s\"", escapeLabel(pollenType)))
+			}
+
+			labelsStr := strings.Join(labelPairs, ",")
+			if labelsStr != "" {
+				fmt.Fprintf(&b, "%s{%s} %s\n",
+					metricName,
+					labelsStr,
+					strconv.FormatFloat(item.Value, 'f', -1, 64),
+				)
+			} else {
+				fmt.Fprintf(&b, "%s %s\n",
+					metricName,
+					strconv.FormatFloat(item.Value, 'f', -1, 64),
+				)
+			}
 		}
 	}
 	return b.String()

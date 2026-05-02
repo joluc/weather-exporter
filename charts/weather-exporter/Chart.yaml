@@ -2,8 +2,8 @@ apiVersion: v2
 name: weather-exporter
 description: Prometheus exporter for weather data with per-city provider selection
 type: application
-version: 0.2.1
-appVersion: "0.2.0"
+version: 0.3.1
+appVersion: "0.3.1"
 home: https://github.com/joluc/weather-exporter
 sources:
   - https://github.com/joluc/weather-exporter

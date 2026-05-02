@@ -41,6 +41,9 @@ spec:
           {{- if .Values.config.providers.dwd.enabled }}
           - --dwd-enabled
           {{- end }}
+          {{- if .Values.config.providers.dwdPollen.enabled }}
+          - --dwd-pollen-enabled
+          {{- end }}
           {{- if .Values.config.providers.yr.userAgent }}
           - --yr-user-agent={{ .Values.config.providers.yr.userAgent }}
           {{- end }}

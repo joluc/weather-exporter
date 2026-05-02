@@ -29,6 +29,8 @@ config:
   providers:
     dwd:
       enabled: false
+    dwdPollen:
+      enabled: false
     yr:
       userAgent: ""
     openweathermap:
